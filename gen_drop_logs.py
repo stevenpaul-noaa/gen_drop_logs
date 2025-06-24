@@ -266,9 +266,6 @@ for flid in sorted(flights):
   count=1
   #print(flid)
 
-  master_file.write(outstr + '\n')
-
-
   of=open(outdirname+'/summary_'+startdatetime+'.txt',"a")
   of.write(flid+'\n')
   of.close()
@@ -338,6 +335,7 @@ for flid in sorted(flights):
     outstr=outstr+','+flight[file]['pllon'].replace(',',' ')
     outstr=outstr+','+flight[file]['plalt'].replace(',',' ')
     of.write(outstr+'\n')
+    master_file.write(outstr + '\n')
     #print(outstr)
 
     
