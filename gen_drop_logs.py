@@ -252,7 +252,9 @@ for root, dirs, files in os.walk(scandirname, topdown=False):
 
 
 
-
+master_csv_path = os.path.join(outdirname, f'all_drops_{startdatetime}.csv')
+master_file = open(master_csv_path, "w")
+master_file.write('flight_id,project,launch_date,launch_time,file,count,sonde_id,operator,account,bad,sounding_name,channel,tail_num,actype,std_comm,comm,sonde_type,sonde_rev,sonde_built,sens,freq,batt,firm,shut,basep,baset,baseh1,baseh2,dynmp,dynmt,dynmh,pltype,pltime,plpres,pltemp,pldewp,plhumi,plws,plwd,pllat,pllon,plalt\n')
 
 #run through each FLID
 for flid in sorted(flights):
@@ -263,7 +265,10 @@ for flid in sorted(flights):
   date=None
   count=1
   #print(flid)
-  
+
+  master_file.write(outstr + '\n')
+
+
   of=open(outdirname+'/summary_'+startdatetime+'.txt',"a")
   of.write(flid+'\n')
   of.close()
@@ -342,7 +347,10 @@ for flid in sorted(flights):
   #print('')
   print('CREATED: '+outdirname+'/'+flid+'.csv')
   of.close()
-    
+  
+master_file.close()
+print('CREATED: ' + master_csv_path)
+
 
         
       
