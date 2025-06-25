@@ -1,6 +1,9 @@
 import os
 import sys
 import datetime
+import json
+import re
+from netCDF4 import Dataset
 
 import tkinter as tk
 from tkinter import filedialog
@@ -30,7 +33,6 @@ AIRCRAFT = simpledialog.askstring("INPUT", "AIRCRAFT IDENT:\nA = ALL\nH = N42\nI
 
 
 flights={}
-minis={}
 char='-'
 for root, dirs, files in os.walk(scandirname, topdown=False):
   sys.stdout.write('\r'+char)
@@ -65,7 +67,14 @@ for root, dirs, files in os.walk(scandirname, topdown=False):
         continue
       #if (name[1:5] != '2019'):
       #  continue
-      
+      pattern = r'^D(\d{8})_(\d{6})\..+$'
+      match = re.match(pattern, name)
+      if match:
+        date_part = match.group(1)   # YYYYMMDD
+        time_part = match.group(2)   # HHMMSS
+        launch_datetime = f"{date_part}T{time_part}"  # e.g. "20250124T134530"
+      else:
+        launch_datetime = None  # or handle error
       print(name)
       flid=os.path.basename(root).upper()
       file=os.path.join(root, name)
@@ -85,7 +94,6 @@ for root, dirs, files in os.walk(scandirname, topdown=False):
       type=''
       rev=''
       built=''
-      ptu=''
       sens=''
       freq=''
       batt=''
@@ -165,8 +173,8 @@ for root, dirs, files in os.walk(scandirname, topdown=False):
             plws= data.split(',')[0].strip()
             plwd= data.split(',')[1].strip()
           elif field == 'Pre-launch Obs (lon,lat,alt)':
-            pllat= data.split(',')[0].strip()
-            pllon= data.split(',')[1].strip()
+            pllon= data.split(',')[0].strip()
+            pllat= data.split(',')[1].strip()
             plalt= data.split(',')[2].strip()
           elif field == 'Operator Name/Comments':
             oper= data.split(',',1)[0].strip()
@@ -177,12 +185,6 @@ for root, dirs, files in os.walk(scandirname, topdown=False):
       #endfor line in f:
       f.close()
 
-      if type == '2':
-        if not flid in minis:
-          minis[flid]=[name]
-        else:
-          minis[flid].append(name)
-
       if not flid in flights:
         flights[flid]={}
       
@@ -191,18 +193,28 @@ for root, dirs, files in os.walk(scandirname, topdown=False):
       #print('ID IS: ' + id)
       sys.stdout.flush()
       if id in flights[flid]:
-        #print(id +' is present')
-        #print('curr_channel: '+channel)
-        #print('id_channel: '+flights[flid][id]['channel'])
+        existing = flights[flid][id]
+        existing_channel = int (existing.get('channel', -1))
+        current_channel = int(channel)
+        existing_source = existing.get('source_type', '')
         sys.stdout.flush()
-        if int(flights[flid][id]['channel']) > int(channel):
-          newid=flights[flid][id]['id']+'_'+flights[flid][id]['channel']+'_dup'
-          flights[flid][id]['id']=newid
-          #print('new id: '+ flights[flid][id]['id'])
-          flights[flid][newid]={}
-          flights[flid][newid]=flights[flid].pop(id)
-        else:
-          id=id+'_'+channel+'_dup'
+        if existing_source == 'NC':
+            # D wins – rename NC
+            newid = existing['id'] + '_' + existing['channel'] + '_dup'
+            existing['id'] = newid
+            flights[flid][newid] = existing
+            del flights[flid][id]
+        elif existing_source == 'D':
+            if existing_channel > current_channel:
+                newid = existing['id'] + '_' + existing['channel'] + '_dup'
+                existing['id'] = newid
+                flights[flid][newid] = existing
+                del flights[flid][id]
+            else:
+                id = id + '_' + channel + '_dup'
+      
+      if "Good Drop" not in stdcomm:
+        bad_sonde_flag = 'B'
       
       flights[flid][id]={}
       flights[flid][id]['file']=name
@@ -246,6 +258,177 @@ for root, dirs, files in os.walk(scandirname, topdown=False):
       flights[flid][id]['oper']=oper
       flights[flid][id]['comm']=comm
       flights[flid][id]['stdcomm']=stdcomm
+      flights[flid][id]['source_type']='D'
+      flights[flid][id]['launch_datetime']=launch_datetime
+      flights[flid][id]['accounting_code']=''
+      flights[flid][id]['bad_sonde_flag']=bad_sonde_flag
+    elif name.endswith(".nc"):
+      # new NetCDF logic
+      pattern = r"^([A-Za-z0-9_-]+)-([A-Za-z0-9_-]+)-([0-9]+)-?(\d{8}T\d{6})?-([A-Za-z0-9_-]+)\.nc$"
+      match = re.match(pattern, name)
+      if not match:
+        # Filename does NOT match expected pattern — skip it
+        continue
+
+      # Extract metadata from filename
+      project_name = match.group(1)
+      mission_id = match.group(2)
+      drop_number = match.group(3)
+      filedate = match.group(4)  # Could be None
+      channel = match.group(5)
+
+      if filedate is None:
+        # No launch time in filename, skip or handle as needed
+        print('No launch time in filename. Skipped')
+        continue
+
+      # Now proceed with your logic using extracted fields
+      # Example: parse launch_date from filedate (YYYYMMDDTHHMMSS)
+      launch_date = filedate[:8]          # YYYYMMDD
+      launch_time = filedate[9:]          # HHMMSS
+      launch_datetime = filedate
+      
+      # Check date range filtering here as in your script...
+      dateint=int(launch_date)
+      startdateint=int(start_date)
+      enddateint=int(end_date)
+      if (dateint < startdateint):
+        continue
+      if (dateint > enddateint):
+        continue
+
+
+      # Convert dates and times to MM/DD/YYYY HH:MM:SS
+      if len(launch_date) == 8 and launch_date.isdigit():
+        launch_date = f"{launch_date[4:6]}/{launch_date[6:]}/{launch_date[:4]}"
+      if len(launch_time) == 6 and launch_time.isdigit():
+        launch_time = f"{launch_time[:2]}:{launch_time[2:4]}:{launch_time[4:]}"
+
+      # Then open the NetCDF file and extract metadata...
+      print(name)
+      flid=os.path.basename(root).upper()
+      file=os.path.join(root, name)
+      ncfile = Dataset(file, 'r')
+      
+      project=project_name
+      mission=mission_id
+      actype=getattr(ncfile,'DropPlatform','')
+      tail=getattr(ncfile,'DropTailNumber','')
+      sounding=getattr(ncfile,'ObservationNumber','')
+      id=getattr(ncfile,'SerialNumber','')
+      type=getattr(ncfile,'FactoryProductCode','')
+      rev=getattr(ncfile,'FactoryRevisionCode','')
+      built=getattr(ncfile,'ProductionDate','')
+      sens=getattr(ncfile,'PtuSensorPartNumber','')+' '+getattr(ncfile,'GpsSensorPartNumber','')
+      freq=getattr(ncfile,'DropFrequency','')
+      batt=getattr(ncfile,'BatteryVoltage','')
+      firm=getattr(ncfile,'FactorySndFirmware','')
+      shut=getattr(ncfile,'ShutoffDuration','')
+      basep=getattr(ncfile,'DropPressureAddition','')
+      baset=''
+      baseh1=''
+      baseh2=''
+      dynmp=''
+      dynmt=''
+      dynmh=''
+      pl_obs_raw=getattr(ncfile,'DropLaunchObs','')
+      if pl_obs_raw:
+        try:
+          pl_obs = json.loads(pl_obs_raw)
+        except json.JSONDecodeError:
+          pl_obs={}
+      else:
+        pl_obs={}
+      pltype=pl_obs.get('header','')
+      pltime=pl_obs.get('utc','')
+      plpres=pl_obs.get('static_pressure','')
+      pltemp=pl_obs.get('ambient_temperature','')
+      pldewp=pl_obs.get('dew_point','')
+      plhumi=pl_obs.get('humidity','')
+      plws=pl_obs.get('wind_speed','')
+      plwd=pl_obs.get('wind_direction','')
+      pllat=pl_obs.get('latitude','')
+      pllon=pl_obs.get('longitude','')
+      plalt=pl_obs.get('pressure_altitude','')
+      oper=getattr(ncfile,'DropOperator','')
+      accounting_code=getattr(ncfile,'AccountingCode','')
+      comm=''
+      stdcomm=getattr(ncfile,'OperatorComments','')
+      bad_sonde_flag=''
+      if "Good Drop" not in stdcomm:
+        bad_sonde_flag = 'B'
+
+
+      # Insert into flights dict as you do for D-files...
+      if not flid in flights:
+        flights[flid]={}
+      
+      sys.stdout.flush()
+
+      if id in flights[flid]:
+        existing = flights[flid][id]
+        existing_channel = int (existing.get('channel', -1))
+        current_channel = int(channel)
+        existing_source = existing.get('source_type', '')
+        sys.stdout.flush()
+        if existing_source == 'D':
+            # D wins – NC is renamed
+            id = id + '_' + channel + '_dup'
+        elif existing_source == 'NC':
+            if existing_channel > current_channel:
+                newid = existing['id'] + '_' + existing['channel'] + '_dup'
+                existing['id'] = newid
+                flights[flid][newid] = existing
+                del flights[flid][id]
+            else:
+                id = id + '_' + channel + '_dup'
+
+      
+      flights[flid][id]={}
+      flights[flid][id]['file']=name
+      flights[flid][id]['channel']=channel
+      flights[flid][id]['project']=project
+      flights[flid][id]['mission']=mission
+      flights[flid][id]['actype']=actype
+      flights[flid][id]['tail']=tail
+      flights[flid][id]['launch_date']=launch_date
+      flights[flid][id]['launch_time']=launch_time
+      flights[flid][id]['sounding']=sounding
+      flights[flid][id]['id']=id
+      flights[flid][id]['type']=type
+      flights[flid][id]['rev']=rev
+      flights[flid][id]['built']=built
+      flights[flid][id]['sens']=sens
+      flights[flid][id]['freq']=freq
+      flights[flid][id]['batt']=batt
+      flights[flid][id]['firm']=firm
+      flights[flid][id]['shut']=shut
+      flights[flid][id]['basep']=basep
+      flights[flid][id]['baset']=baset
+      flights[flid][id]['baseh1']=baseh1
+      flights[flid][id]['baseh2']=baseh2
+      flights[flid][id]['dynmp']=dynmp
+      flights[flid][id]['dynmt']=dynmt
+      flights[flid][id]['dynmh']=dynmh
+      flights[flid][id]['pltype']=pltype
+      flights[flid][id]['pltime']=pltime
+      flights[flid][id]['plpres']=plpres
+      flights[flid][id]['pltemp']=pltemp
+      flights[flid][id]['pldewp']=pldewp
+      flights[flid][id]['plhumi']=plhumi
+      flights[flid][id]['plws']=plws
+      flights[flid][id]['plwd']=plwd
+      flights[flid][id]['pllat']=pllat
+      flights[flid][id]['pllon']=pllon
+      flights[flid][id]['plalt']=plalt
+      flights[flid][id]['oper']=oper
+      flights[flid][id]['comm']=comm
+      flights[flid][id]['stdcomm']=stdcomm
+      flights[flid][id]['source_type']='NC'
+      flights[flid][id]['launch_datetime']=launch_datetime
+      flights[flid][id]['accounting_code']=accounting_code
+      flights[flid][id]['bad_sonde_flag']=bad_sonde_flag
+
 
 
 
@@ -284,7 +467,13 @@ for flid in sorted(flights):
   
   #sort the new struct by filename (gets R5 channels before L5 channels)
   #and write one entry per line
-  for file in sorted(flight):
+  for file in sorted(
+    flight, 
+    key=lambda f: (
+      flight[f]['launch_datetime'],
+      1 if flight[f]['file'].endswith('.nc') else 0 # D-files first
+      )
+    ):
     if flight[file]['id'][-4:] == '_dup':
       scount=str(prev_count)+'_dup'
     else:
@@ -300,8 +489,8 @@ for flid in sorted(flights):
     outstr=outstr+','+scount
     outstr=outstr+','+flight[file]['id'].replace(',',' ')
     outstr=outstr+','+flight[file]['oper'].replace(',',' ')
-    outstr=outstr+','
-    outstr=outstr+','
+    outstr=outstr+','+flight[file]['accounting_code'].replace(',',' ') # accounting code
+    outstr=outstr+','+flight[file]['bad_sonde_flag'].replace(',',' ') # bad sonde flag
     outstr=outstr+','+flight[file]['sounding'].replace(',',' ')
     outstr=outstr+','+flight[file]['channel'].replace(',',' ')
     outstr=outstr+','+flight[file]['tail'].replace(',',' ')
@@ -325,15 +514,15 @@ for flid in sorted(flights):
     outstr=outstr+','+flight[file]['dynmh'].replace(',',' ')
     outstr=outstr+','+flight[file]['pltype'].replace(',',' ')
     outstr=outstr+','+flight[file]['pltime'].replace(',',' ')
-    outstr=outstr+','+flight[file]['plpres'].replace(',',' ')
-    outstr=outstr+','+flight[file]['pltemp'].replace(',',' ')
-    outstr=outstr+','+flight[file]['pldewp'].replace(',',' ')
-    outstr=outstr+','+flight[file]['plhumi'].replace(',',' ')
-    outstr=outstr+','+flight[file]['plws'].replace(',',' ')
-    outstr=outstr+','+flight[file]['plwd'].replace(',',' ')
-    outstr=outstr+','+flight[file]['pllat'].replace(',',' ')
-    outstr=outstr+','+flight[file]['pllon'].replace(',',' ')
-    outstr=outstr+','+flight[file]['plalt'].replace(',',' ')
+    outstr=outstr+','+str(flight[file]['plpres']).replace(',',' ')
+    outstr=outstr+','+str(flight[file]['pltemp']).replace(',',' ')
+    outstr=outstr+','+str(flight[file]['pldewp']).replace(',',' ')
+    outstr=outstr+','+str(flight[file]['plhumi']).replace(',',' ')
+    outstr=outstr+','+str(flight[file]['plws']).replace(',',' ')
+    outstr=outstr+','+str(flight[file]['plwd']).replace(',',' ')
+    outstr=outstr+','+str(flight[file]['pllat']).replace(',',' ')
+    outstr=outstr+','+str(flight[file]['pllon']).replace(',',' ')
+    outstr=outstr+','+str(flight[file]['plalt']).replace(',',' ')
     of.write(outstr+'\n')
     master_file.write(outstr + '\n')
     #print(outstr)
@@ -348,16 +537,6 @@ for flid in sorted(flights):
   
 master_file.close()
 print('CREATED: ' + master_csv_path)
-
-
-        
-      
-print('--BEGIN-- MINI SONDE MISSIONS & DROPS')
-for flid in sorted(minis):
-  print(flid)
-  for file in minis[flid]:
-    print(file)
-print('--END-- MINI SONDE MISSIONS & DROPS')
 
 from tkinter import messagebox
 messagebox.showinfo("Information","PROGRAM COMPLETE")
