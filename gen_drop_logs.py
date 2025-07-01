@@ -213,6 +213,7 @@ for root, dirs, files in os.walk(scandirname, topdown=False):
             else:
                 id = id + '_' + channel + '_dup'
       
+      bad_sonde_flag=''
       if "Good Drop" not in stdcomm:
         bad_sonde_flag = 'B'
       
