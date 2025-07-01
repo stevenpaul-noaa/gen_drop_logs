@@ -11,7 +11,7 @@ root = tk.Tk()
 root.withdraw()
 #scandirname = filedialog.askdirectory(initialdir='E:/AVAPSDATA/',  title='INPUT SCAN DIRECTORY')
 #scandirname = filedialog.askdirectory(initialdir='\\\\10.10.60.240/aoc-storage/SEB-Engineering/AVAPS/Mirrors',  title='INPUT SCAN DIRECTORY')
-scandirname = filedialog.askdirectory(initialdir='\\\\10.10.60.240/aoc-storage/AVAPS/Data/Archives',  title='INPUT SCAN DIRECTORY')
+scandirname = filedialog.askdirectory(initialdir='\\\\10.10.60.240/aoc-storage/AVAPS/Data/Archive',  title='INPUT SCAN DIRECTORY')
 #outdirname = filedialog.askdirectory(initialdir='d:/AVAPS/inventory/drop_logs/',  title='OUTPUT DIRECTORY')
 outdirname = filedialog.askdirectory(initialdir=os.getcwd(), title='OUTPUT DIRECTORY')
 
