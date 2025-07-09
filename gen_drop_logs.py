@@ -429,14 +429,24 @@ year_out_dir = os.path.join(outdirname, str(output_year))
 # Create the year directory if it doesn't exist
 os.makedirs(year_out_dir, exist_ok=True)
 
+# Path for the master CSV
 master_csv_path = os.path.join(year_out_dir, f'all_drops_{startdatetime}.csv')
 master_file = open(master_csv_path, "w")
 master_file.write('flight_id,project,launch_date,launch_time,file,count,sonde_id,operator,account,bad,sounding_name,channel,tail_num,actype,std_comm,comm,sonde_type,sonde_rev,sonde_built,sens,freq,batt,firm,shut,basep,baset,baseh1,baseh2,dynmp,dynmt,dynmh,pltype,pltime,plpres,pltemp,pldewp,plhumi,plws,plwd,pllat,pllon,plalt\n')
 
-# Iterate through each FLID to process and write to the master CSV
+# Path for the FLID summary text file
+flid_summary_path = os.path.join(year_out_dir, f'summary_{startdatetime}.txt')
+flid_summary_file = open(flid_summary_path, "w")
+
+
+# Iterate through each FLID to process and write to the master CSV and summary file
 for flid in sorted(flights):
     count = 1
     prev_count = 0
+
+    # Write FLID to the summary file
+    flid_summary_file.write(flid + '\n')
+    print(f'Processing FLID: {flid}') # Added for better console feedback
 
     # Create a temporary list of drops for the current flight, sorted for output
     flight_drops_sorted = sorted(
@@ -503,6 +513,9 @@ for flid in sorted(flights):
         master_file.write(outstr + '\n')
 
 master_file.close()
+flid_summary_file.close() # Close the summary file
+
 print('CREATED: ' + master_csv_path)
+print('CREATED: ' + flid_summary_path)
 
 messagebox.showinfo("Information", "PROGRAM COMPLETE")
