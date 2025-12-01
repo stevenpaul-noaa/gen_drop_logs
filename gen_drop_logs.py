@@ -261,39 +261,80 @@ for root_dir, dirs, files in os.walk(scandirname, topdown=False):
 
         # NetCDF file processing
         elif name.endswith(".nc"):
-            pattern = r"^([A-Za-z0-9_-]+)-([A-Za-z0-9_-]+)-([0-9]+)-?(\d{8}T\d{6})?-([A-Za-z0-9_-]+)\.nc$"
+            print(name)
+            #pattern = r"^([A-Za-z0-9_-]+)-(\d{8}T\d{6})-([0-9]+)-([A-Za-z0-9_-]+)-([0-9]+)\.nc$"
+            pattern = r"^([A-Za-z0-9_-]+)-([^-]*)-([0-9]+)-([A-Za-z0-9_-]+)-([0-9]+)\.nc$"
             match = re.match(pattern, name)
             if not match:
                 print(f'Filename does NOT match expected pattern – skipped: {name}')
                 continue
 
-            project_name = match.group(1)
-            mission_id = match.group(2)
+            project_name = match.group(4)
+            mission_id = match.group(1)
             drop_number = match.group(3)
-            filedate = match.group(4)  # Could be None
+            filedate = match.group(2)  # Could be None
             channel = match.group(5)
+            #print(f'Mission ID: {mission_id}')
 
-            if filedate is None:
-                print(f'No launch time in filename. Skipped: {name}')
-                continue
+            # Initialize with empty strings
+            launch_date_raw = ""  # YYYYMMDD
+            launch_time_raw = ""  # HHMMSS
+            launch_datetime = ""
+            dateint = 0 # Initialize for date filtering
 
-            launch_date_raw = filedate[:8]  # YYYYMMDD
-            launch_time_raw = filedate[9:]  # HHMMSS
-            launch_datetime = filedate
+            if filedate:
+                # If a launch datetime was in the filename
+                launch_date_raw = filedate[:8]  # YYYYMMDD
+                launch_time_raw = filedate[9:]  # HHMMSS
+                launch_datetime = filedate
 
-            dateint = int(launch_date_raw)
+                dateint = int(launch_date_raw) 
+                # Convert dates and times to MM/DD/YYYY HH:MM:SS (for display in CSV)
+                launch_date = f"{launch_date_raw[4:6]}/{launch_date_raw[6:]}/{launch_date_raw[:4]}"
+                launch_time = f"{launch_time_raw[:2]}:{launch_time_raw[2:4]}:{launch_time_raw[4:]}"
+
+            else:
+                # No launch datetime in filename, attempt to use DropCreationDate
+                flid = os.path.basename(root_dir).upper()
+                file_path = os.path.join(root_dir, name)
+
+                ncfile = None # Initialize to None
+
+                try:
+                    ncfile = Dataset(file_path, 'r')
+                    drop_creation_date_attr = getattr(ncfile, 'DropCreationDate', '')
+                    if drop_creation_date_attr:
+                        try:
+                            # Parse "2025-02-22T20:22:13.759749443Z"
+                            # Keep only YYYY-MM-DDTHH:MM:SS part for parsing
+                            parsed_dt = datetime.datetime.strptime(drop_creation_date_attr.split('.')[0], "%Y-%m-%dT%H:%M:%S")
+                            launch_datetime = parsed_dt.strftime("%Y%m%d%H%M%S") # For internal sorting key
+                            launch_date_raw = parsed_dt.strftime("%Y%m%d")
+                            launch_time_raw = parsed_dt.strftime("%H%M%S")
+
+                            dateint = int(launch_date_raw)
+                            launch_date = parsed_dt.strftime("%m/%d/%Y")
+                            launch_time = parsed_dt.strftime("%H:%M:%S")
+                            print(f"Using DropCreationDate for {name}: {launch_date} {launch_time}")
+                        except ValueError as ve:
+                            print(f"Warning: Could not parse DropCreationDate '{drop_creation_date_attr}' from {name}: {ve}")
+                    else:
+                        print(f"No DropCreationDate found in {name}. Date will be empty.")
+                except Exception as e:
+                    print(f"Error opening/reading NetCDF file {file_path} for date fallback: {e}")
+                    dateint = 0 # Ensure dateint is set to allow filtering to proceed
+                finally:
+                    if ncfile:
+                        ncfile.close()
+            
             startdateint = int(start_date)
             enddateint = int(end_date)
+
             if (dateint < startdateint):
                 continue
             if (dateint > enddateint):
                 continue
 
-            # Convert dates and times to MM/DD/YYYY HH:MM:SS (for display in CSV)
-            launch_date = f"{launch_date_raw[4:6]}/{launch_date_raw[6:]}/{launch_date_raw[:4]}"
-            launch_time = f"{launch_time_raw[:2]}:{launch_time_raw[2:4]}:{launch_time_raw[4:]}"
-
-            print(name)
             flid = os.path.basename(root_dir).upper()
             file_path = os.path.join(root_dir, name)
 
