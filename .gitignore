@@ -1,0 +1,6 @@
+# Ignore everything
+   *
+   
+   # Except this file
+   !gen_drop_logs.py
+   !.gitignore
