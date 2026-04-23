@@ -18,12 +18,15 @@ _devnull.close()
 
 from tkcalendar import Calendar
 
+import configparser
+
 # ── Theme ────────────────────────────────────────────────────────────────────
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 SCAN_DEFAULT = r'\\10.10.60.240\aoc-storage\AVAPS\Data\Archive'
-NOW = datetime.datetime.now(datetime.timezone.utc)
+NOW          = datetime.datetime.now(datetime.timezone.utc)
+CONFIG_PATH  = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gen_drop_logs.cfg')
 
 AIRCRAFT_OPTIONS = {
     "A – All aircraft":         "A",
@@ -32,6 +35,37 @@ AIRCRAFT_OPTIONS = {
     "N – N49":                  "N",
     "O – Other (not H, I, N)":  "O",
 }
+AIRCRAFT_CODES_INV = {v: k for k, v in AIRCRAFT_OPTIONS.items()}
+
+def load_config():
+    """Return config defaults, reading from file if it exists."""
+    cfg = configparser.ConfigParser()
+    defaults = {
+        'scan_dir':   SCAN_DEFAULT + '\\' + NOW.strftime("%Y"),
+        'out_dir':    os.getcwd(),
+        'last_end':   '',          # empty = first run
+        'aircraft':   'A',
+    }
+    if os.path.exists(CONFIG_PATH):
+        cfg.read(CONFIG_PATH)
+        s = cfg['settings'] if 'settings' in cfg else {}
+        defaults['scan_dir']  = s.get('scan_dir',  defaults['scan_dir'])
+        defaults['out_dir']   = s.get('out_dir',   defaults['out_dir'])
+        defaults['last_end']  = s.get('last_end',  defaults['last_end'])
+        defaults['aircraft']  = s.get('aircraft',  defaults['aircraft'])
+    return defaults
+
+def save_config(scan_dir, out_dir, end_date, aircraft_code):
+    """Save current run settings to config file."""
+    cfg = configparser.ConfigParser()
+    cfg['settings'] = {
+        'scan_dir':  scan_dir,
+        'out_dir':   out_dir,
+        'last_end':  end_date,
+        'aircraft':  aircraft_code,
+    }
+    with open(CONFIG_PATH, 'w') as f:
+        cfg.write(f)
 
 # ── GUI ───────────────────────────────────────────────────────────────────────
 class App(ctk.CTk):
@@ -41,6 +75,24 @@ class App(ctk.CTk):
         self.title("AVAPS Drop Log Generator")
         self.geometry("600x580")
         self.resizable(False, False)
+
+        # ── Load config ───────────────────────────────────────────────────────
+        cfg = load_config()
+
+        # Derive start date: last_end + 1 day, or Jan 1 of current year
+        if cfg['last_end']:
+            try:
+                last_end_dt = datetime.datetime.strptime(cfg['last_end'], "%Y%m%d")
+                default_start = (last_end_dt + datetime.timedelta(days=1)).strftime("%Y%m%d")
+            except ValueError:
+                default_start = NOW.strftime("%Y") + "0101"
+        else:
+            default_start = NOW.strftime("%Y") + "0101"
+
+        default_end      = NOW.strftime("%Y%m%d")
+        default_scan     = cfg['scan_dir']
+        default_out      = cfg['out_dir']
+        default_aircraft = AIRCRAFT_CODES_INV.get(cfg['aircraft'], list(AIRCRAFT_OPTIONS.keys())[0])
 
         FONT        = "Consolas"
         FONT_LABEL  = ctk.CTkFont(family=FONT, size=11, weight="bold")
@@ -92,7 +144,7 @@ class App(ctk.CTk):
 
         # Scan directory
         lbl("Scan Directory", 0)
-        self.scan_var = tk.StringVar(value="")
+        self.scan_var = tk.StringVar(value=default_scan)
         scan_entry = path_entry(self.scan_var, 0)
 
         def pick_scan(_event=None):
@@ -105,7 +157,7 @@ class App(ctk.CTk):
 
         # Output directory — click to browse, no button
         lbl("Output Directory", 1)
-        self.out_var = tk.StringVar(value=os.getcwd())
+        self.out_var = tk.StringVar(value=default_out)
         out_entry = path_entry(self.out_var, 1)
 
         def pick_out(_event=None):
@@ -120,8 +172,8 @@ class App(ctk.CTk):
         bot.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(10, 0))
         bot.columnconfigure((1, 4), weight=1)
 
-        self.start_var = tk.StringVar(value=NOW.strftime("%Y") + "0101")
-        self.end_var   = tk.StringVar(value=NOW.strftime("%Y%m%d"))
+        self.start_var = tk.StringVar(value=default_start)
+        self.end_var   = tk.StringVar(value=default_end)
 
         def open_cal(var, title):
             try:
@@ -174,7 +226,7 @@ class App(ctk.CTk):
 
         # Aircraft — manual dropdown to avoid arrow rendering issue
         lbl("Aircraft", 3)
-        self.aircraft_display = tk.StringVar(value=list(AIRCRAFT_OPTIONS.keys())[0])
+        self.aircraft_display = tk.StringVar(value=default_aircraft)
 
         ac_frame = ctk.CTkFrame(form, fg_color=C_BG, border_color=C_BORDER,
                                 border_width=2, corner_radius=6)
@@ -224,9 +276,6 @@ class App(ctk.CTk):
         self.run_btn.pack(fill="x", padx=PAD, pady=12)
 
         self.log_line("Ready.")
-
-        # ── Auto-open scan dir picker on launch ───────────────────────────────
-        self.after(100, pick_scan)
 
 
     # ── Logging ───────────────────────────────────────────────────────────────
@@ -644,6 +693,15 @@ class App(ctk.CTk):
             self.log_line(f'✓ CREATED: {flid_summary_path}')
             self.log_line('─' * 48)
             self.log_line('COMPLETE.')
+
+            # ── Save config ───────────────────────────────────────────────────
+            save_config(
+                scan_dir     = scandirname,
+                out_dir      = outdirname,
+                end_date     = end_date,
+                aircraft_code= AIRCRAFT,
+            )
+
             self.show_done(master_csv_path, flid_summary_path)
 
         except Exception as e:
